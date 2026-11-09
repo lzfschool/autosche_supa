@@ -7,7 +7,10 @@
 // ・資料表與權限請先執行 supabase-setup.sql。
 // ============================================================
 
-window.SUPABASE_CONFIG = null;
+window.SUPABASE_CONFIG = {
+  url: "https://fjjjuvguezlqnnxtjlgd.supabase.co",
+  anonKey: "sb_publishable_LFP2t9dFAPaiiE2ZRznIoA_Qj-vZanP"
+};
 
 // 範例：
 // window.SUPABASE_CONFIG = {
