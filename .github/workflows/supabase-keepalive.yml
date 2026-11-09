@@ -1,0 +1,50 @@
+name: Supabase 每日喚醒
+
+# Supabase 免費專案約 7 天無活動會被暫停。
+# 這個排程每天寫入一次 keepalive 資料表，讓資料庫保持啟用。
+on:
+  schedule:
+    - cron: "0 0 * * *"   # 每天 UTC 00:00（台灣時間 08:00）
+  workflow_dispatch:       # 也可在 Actions 頁面手動執行
+
+permissions:
+  contents: write
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 讀取 supabase-config.js 並喚醒資料庫
+        run: |
+          URL=$(grep -oP '^\s*url:\s*"\K[^"]+' supabase-config.js || true)
+          KEY=$(grep -oP '^\s*anonKey:\s*"\K[^"]+' supabase-config.js || true)
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then
+            echo "::error::supabase-config.js 尚未填入 url / anonKey"
+            exit 1
+          fi
+          HDR=(-H "apikey: $KEY" -H "Content-Type: application/json")
+          # 舊版 anon key（JWT）需另外帶 Authorization；新版 sb_publishable_ 金鑰只需 apikey
+          if [[ "$KEY" == eyJ* ]]; then HDR+=(-H "Authorization: Bearer $KEY"); fi
+          NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          curl -fsS -X POST "$URL/rest/v1/keepalive?on_conflict=id" "${HDR[@]}" \
+            -H "Prefer: resolution=merge-duplicates,return=minimal" \
+            -d "{\"id\":1,\"pinged_at\":\"$NOW\"}"
+          echo "寫入 keepalive：$NOW"
+          curl -fsS "$URL/rest/v1/tugofwar?select=room&limit=1" "${HDR[@]}"
+          echo
+          echo "Supabase 喚醒完成"
+
+      # GitHub 會停用 60 天沒有任何 commit 的 repo 的排程，接近 50 天時自動補一個空 commit
+      - name: 保持 GitHub 排程啟用
+        run: |
+          last=$(git log -1 --format=%ct)
+          days=$(( ( $(date +%s) - last ) / 86400 ))
+          echo "距離上次 commit：$days 天"
+          if [ "$days" -ge 50 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "keepalive: 保持每日排程啟用"
+            git push
+          fi
